@@ -4,11 +4,13 @@ API cham diem cau tieng Trung - Render Free toi uu.
 Endpoint POST /check  - dung cho app
 Endpoint GET  /test   - test bang browser
 Fallback fuzzywuzzy khi khong co pycorrector
+Da tich hop pypinyin de tra pinyin tung ky tu.
 """
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from fuzzywuzzy import fuzz
+from pypinyin import pinyin, Style
 import re
 import threading
 
@@ -57,6 +59,29 @@ def clean(text):
     if not text:
         return ''
     return re.sub(r'[。，！？、；：""''「」『』（）《》〈〉【】〔〕\s]+', '', str(text))
+
+
+def get_pinyin(char):
+    """Tra pinyin cua 1 ky tu Han, co dau thanh."""
+    if not char:
+        return ''
+    try:
+        result = pinyin(char, style=Style.TONE)
+        if result and result[0]:
+            return result[0][0]
+    except Exception:
+        pass
+    return ''
+
+
+def add_pinyin_to_errors(errors):
+    """Bo sung pinyin vao moi error object."""
+    for e in errors:
+        if e.get('user'):
+            e['user_pinyin'] = get_pinyin(e['user'])
+        if e.get('correct'):
+            e['correct_pinyin'] = get_pinyin(e['correct'])
+    return errors
 
 
 def find_diff(user, correct):
@@ -111,7 +136,7 @@ def grade(user_answer, correct_answer):
         return {
             'score': 0,
             'status': 'empty',
-            'message': 'Ban chua go gi ca',
+            'message': 'Bạn chưa gõ gì cả',
             'errors': [],
             'suggestion': correct_answer,
             'used_ai': False
@@ -121,7 +146,7 @@ def grade(user_answer, correct_answer):
         return {
             'score': 100,
             'status': 'correct',
-            'message': 'Dung hoan toan',
+            'message': 'Đúng hoàn toàn',
             'errors': [],
             'suggestion': None,
             'used_ai': False
@@ -154,11 +179,14 @@ def grade(user_answer, correct_answer):
     ratio = max(0, min(1, ratio))
 
     if ratio >= 0.9:
-        status, message = 'correct', 'Dung (sai nho)'
+        status, message = 'correct', 'Đúng (sai nhỏ)'
     elif ratio >= 0.6:
-        status, message = 'partial', 'Gan dung'
+        status, message = 'partial', 'Gần đúng'
     else:
         status, message = 'wrong', 'Sai'
+
+    # ⭐ Bo sung pinyin cho tung error
+    add_pinyin_to_errors(errors)
 
     return {
         'score': round(ratio * 100),
@@ -218,7 +246,7 @@ def test_get():
 def index():
     return jsonify({
         'name': 'Chinese Grading API',
-        'version': '3.0-free',
+        'version': '3.1-pypinyin',
         'endpoints': {
             'health': '/health',
             'warmup': '/warmup',
