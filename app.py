@@ -17,16 +17,12 @@ import threading
 app = Flask(__name__)
 CORS(app)
 
-# =======================================================
-#  GLOBAL STATE - Lazy load
-# =======================================================
 _corrector = None
 _corrector_lock = threading.Lock()
 _corrector_failed = False
 
 
 def get_corrector():
-    """Lazy load pycorrector - chi load 1 lan."""
     global _corrector, _corrector_failed
 
     if _corrector is not None:
@@ -52,9 +48,6 @@ def get_corrector():
             return None
 
 
-# =======================================================
-#  HELPER
-# =======================================================
 def clean(text):
     if not text:
         return ''
@@ -62,7 +55,6 @@ def clean(text):
 
 
 def get_pinyin(char):
-    """Tra pinyin cua 1 ky tu Han, co dau thanh."""
     if not char:
         return ''
     try:
@@ -75,7 +67,6 @@ def get_pinyin(char):
 
 
 def add_pinyin_to_errors(errors):
-    """Bo sung pinyin vao moi error object."""
     for e in errors:
         if e.get('user'):
             e['user_pinyin'] = get_pinyin(e['user'])
@@ -85,7 +76,7 @@ def add_pinyin_to_errors(errors):
 
 
 def find_diff(user, correct):
-    """Tim loi bang Levenshtein."""
+    """Tim loi bang Levenshtein. Tra ve ca input_position."""
     u = list(clean(user))
     c = list(clean(correct))
     errors = []
@@ -109,14 +100,30 @@ def find_diff(user, correct):
             i -= 1
             j -= 1
         elif i > 0 and j > 0 and dp[i][j] == dp[i-1][j-1] + 1:
-            errors.append({'type': 'wrong', 'position': j, 'user': u[i-1], 'correct': c[j-1]})
+            errors.append({
+                'type': 'wrong',
+                'position': j,
+                'input_position': i - 1,
+                'user': u[i-1],
+                'correct': c[j-1]
+            })
             i -= 1
             j -= 1
         elif j > 0 and dp[i][j] == dp[i][j-1] + 1:
-            errors.append({'type': 'missing', 'position': j, 'correct': c[j-1]})
+            errors.append({
+                'type': 'missing',
+                'position': j,
+                'input_position': i,
+                'correct': c[j-1]
+            })
             j -= 1
         elif i > 0 and dp[i][j] == dp[i-1][j] + 1:
-            errors.append({'type': 'extra', 'position': j, 'user': u[i-1]})
+            errors.append({
+                'type': 'extra',
+                'position': j,
+                'input_position': i - 1,
+                'user': u[i-1]
+            })
             i -= 1
         else:
             break
@@ -125,9 +132,6 @@ def find_diff(user, correct):
     return errors, dp[m][n]
 
 
-# =======================================================
-#  GRADE
-# =======================================================
 def grade(user_answer, correct_answer):
     u = clean(user_answer)
     c = clean(correct_answer)
@@ -161,9 +165,11 @@ def grade(user_answer, correct_answer):
             if err_info:
                 used_ai = True
                 for e in err_info:
+                    pos = e.get('pos', 0)
                     errors.append({
                         'type': 'wrong',
-                        'position': e.get('pos', 0),
+                        'position': pos,
+                        'input_position': pos,
                         'user': e.get('orig', ''),
                         'correct': e.get('correct', '')
                     })
@@ -185,7 +191,6 @@ def grade(user_answer, correct_answer):
     else:
         status, message = 'wrong', 'Sai'
 
-    # ⭐ Bo sung pinyin cho tung error
     add_pinyin_to_errors(errors)
 
     return {
@@ -198,9 +203,6 @@ def grade(user_answer, correct_answer):
     }
 
 
-# =======================================================
-#  ROUTES
-# =======================================================
 @app.route('/health')
 def health():
     return jsonify({
@@ -246,7 +248,7 @@ def test_get():
 def index():
     return jsonify({
         'name': 'Chinese Grading API',
-        'version': '3.1-pypinyin',
+        'version': '3.2-input-position',
         'endpoints': {
             'health': '/health',
             'warmup': '/warmup',
