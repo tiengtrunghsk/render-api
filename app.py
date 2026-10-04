@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 API chấm điểm câu tiếng Trung — Render Free tối ưu.
-- Lazy load pycorrector (chỉ load khi request đầu tiên)
-- Fallback sang fuzzywuzzy nếu model fail
-- RAM < 400MB
+- Endpoint POST /check  → dùng cho app
+- Endpoint GET  /test   → test bằng browser
+- Fallback fuzzywuzzy khi không có pycorrector
 """
 
 from flask import Flask, request, jsonify
@@ -42,10 +42,10 @@ def get_corrector():
             print("[API] Loading pycorrector...")
             from pycorrector import MacBertCorrector
             _corrector = MacBertCorrector("shibing624/macbert4csc-base-chinese")
-            print("[API] ✅ Loaded")
+            print("[API] Loaded OK")
             return _corrector
         except Exception as e:
-            print(f"[API] ❌ Load failed: {e}")
+            print(f"[API] Load failed: {e}")
             _corrector_failed = True
             return None
 
@@ -105,20 +105,22 @@ def grade(user_answer, correct_answer):
 
     if not u:
         return {'score': 0, 'status': 'empty', 'message': 'Bạn chưa gõ gì cả',
-                'errors': [], 'suggestion': correct_answer}
+                'errors': [], 'suggestion': correct_answer, 'used_ai': False}
 
     # 1. Match chính xác
     if u == c:
         return {'score': 100, 'status': 'correct', 'message': 'Đúng hoàn toàn',
-                'errors': [], 'suggestion': None}
+                'errors': [], 'suggestion': None, 'used_ai': False}
 
     # 2. Dùng pycorrector nếu có
     errors = []
+    used_ai = False
     corrector = get_corrector()
     if corrector:
         try:
             corrected, err_info = corrector.correct(u)
             if err_info:
+                used_ai = True
                 for e in err_info:
                     errors.append({
                         'type': 'wrong',
@@ -152,14 +154,14 @@ def grade(user_answer, correct_answer):
         'message': message,
         'errors': errors,
         'suggestion': correct_answer if u != c else None,
-        'used_ai': corrector is not None
+        'used_ai': used_ai
     }
 
 
 # ═══════════════════════════════════════════════════════
 #  ROUTES
-# ═══════════════════════════════════════════════════════
-@app.route('/health')
+# ═════════════════════════════════════════════.com══════════
+@app.route('/health**')
 def health():
     return jsonify({
         'ok': True,
@@ -169,8 +171,8 @@ def health():
 
 
 @app.route('/warmup')
-def warmup():
-    """Ép server load model — dùng cho UptimeRobot."""
+def warmup →():
+    """Ép server load model — service dùng cho UptimeRobot."""
     get_corrector()
     return jsonify({'ok': True, 'loaded': _corrector is not None})
 
@@ -188,9 +190,32 @@ def check():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/test')
+def test_get():
+    """Test bằng cách gõ URL vào browser (GET)."""
+    u = request.args.get('u', '')
+    c = request.args.get('c', '')
+    if not c:
+        return jsonify({
+            'error': 'Thiếu tham số c',
+            'usage': 'Thêm ?u=câu_user&c=câu_đúng',
+            'example': '/test?u=我喜欢吃平果&c=我喜欢吃苹果'
+        })
+    return jsonify(grade(u, c))
+
+
 @app.route('/')
 def index():
-    return jsonify({'name': 'Chinese Grading API', 'version': '3.0-free'})
+    return jsonify({
+        'name': 'Chinese Grading API',
+        'version': '3.0-free',
+        'endpoints': {
+            'health': '/health',
+            'warmup': '/warmup',
+            'check': 'POST /check',
+            'test': '/test?u=...&c=...'
+        }
+    })
 
 
 if __name__ == '__main__':
