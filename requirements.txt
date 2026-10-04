@@ -3,3 +3,4 @@ flask-cors==4.0.0
 fuzzywuzzy==0.18.0
 python-Levenshtein==0.23.0
 gunicorn==21.2.0
+pypinyin==0.51.0
